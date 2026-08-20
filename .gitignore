@@ -1,0 +1,26 @@
+# Dependencies
+node_modules/
+
+# Playwright browsers (installed locally via postinstall)
+node_modules/playwright-core/.local-browsers/
+
+# Test output
+results/
+test-results/
+playwright-report/
+blob-report/
+playwright/.cache/
+
+# Build
+dist/
+
+# Environment
+.env
+.env.*
+
+# OS / editor
+.DS_Store
+Thumbs.db
+*.log
+.idea/
+.vscode/
