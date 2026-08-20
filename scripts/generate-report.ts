@@ -1,5 +1,6 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { formatDuration, formatLocalDateTime, getRunDurationMs } from '../src/datetime';
 import type { RunSummary, TestResult } from '../src/types';
 
 const RESULTS_DIR = path.join(process.cwd(), 'results');
@@ -20,8 +21,8 @@ function formatType(type: string[]): string {
   return type.join(', ');
 }
 
-function formatDuration(durationMs: number): string {
-  return `${(durationMs / 1000).toFixed(1)}s`;
+function formatSessionId(sessionId?: string): string {
+  return sessionId ?? '_not captured_';
 }
 
 function formatAntwortCell(result: TestResult): string {
@@ -40,19 +41,21 @@ function formatAntwortCell(result: TestResult): string {
 function buildMarkdownReport(summary: RunSummary): string {
   const passed = summary.results.filter((result) => result.status === 'passed').length;
   const failed = summary.results.filter((result) => result.status === 'failed').length;
+  const runDurationMs = getRunDurationMs(summary.startedAt, summary.finishedAt);
 
   const header = [
     '# SBB Chat Test Report',
     '',
     `- Run ID: \`${summary.runId}\``,
-    `- Started: ${summary.startedAt}`,
-    `- Finished: ${summary.finishedAt || 'in progress'}`,
+    `- Started: ${formatLocalDateTime(summary.startedAt)}`,
+    `- Finished: ${summary.finishedAt ? formatLocalDateTime(summary.finishedAt) : 'in progress'}`,
+    `- Run duration: ${runDurationMs !== undefined ? formatDuration(runDurationMs) : 'in progress'}`,
     `- Base URL: ${summary.baseUrl}`,
     `- Playwright: ${summary.playwrightVersion}`,
     `- Results: ${passed} passed, ${failed} failed, ${summary.results.length} total`,
     '',
-    '| Kategorie | Intention | Type | Prompt | Antwort |',
-    '|-----------|-----------|------|--------|---------|',
+    '| Kategorie | Intention | Type | Prompt | Dauer | Session ID | Antwort |',
+    '|-----------|-----------|------|--------|-------|------------|---------|',
   ];
 
   const rows = summary.results.map((result) => {
@@ -61,6 +64,8 @@ function buildMarkdownReport(summary: RunSummary): string {
       escapeMarkdown(result.intention),
       formatType(result.type),
       escapeMarkdown(result.prompt),
+      formatDuration(result.durationMs),
+      escapeMarkdown(formatSessionId(result.chatSessionId)),
       formatAntwortCell(result),
     ].join(' | ');
   });
@@ -72,6 +77,7 @@ function buildHtmlReport(summary: RunSummary): string {
   const categories = [...new Set(summary.results.map((result) => result.category))];
   const passed = summary.results.filter((result) => result.status === 'passed').length;
   const failed = summary.results.filter((result) => result.status === 'failed').length;
+  const runDurationMs = getRunDurationMs(summary.startedAt, summary.finishedAt);
 
   const rows = summary.results
     .map((result) => {
@@ -92,8 +98,10 @@ function buildHtmlReport(summary: RunSummary): string {
         <td>${escapeHtml(result.intention)}</td>
         <td>${escapeHtml(formatType(result.type))}</td>
         <td>${escapeHtml(result.prompt)}</td>
-        <td class="answer">${screenshotHtml}${responseHtml}</td>
         <td>${escapeHtml(formatDuration(result.durationMs))}</td>
+        <td><code>${escapeHtml(formatSessionId(result.chatSessionId))}</code></td>
+        <td class="answer">${screenshotHtml}${responseHtml}</td>
+        <td>${escapeHtml(formatLocalDateTime(result.timestamp))}</td>
         <td class="status-${escapeHtml(result.status)}">${escapeHtml(result.status)}</td>
       </tr>`;
     })
@@ -118,8 +126,9 @@ function buildHtmlReport(summary: RunSummary): string {
     .meta { margin-bottom: 20px; color: #555; }
     .controls { margin-bottom: 16px; }
     table { width: 100%; border-collapse: collapse; table-layout: fixed; }
-    th, td { border: 1px solid #ddd; padding: 10px; vertical-align: top; text-align: left; }
+    th, td { border: 1px solid #ddd; padding: 10px; vertical-align: top; text-align: left; overflow-wrap: break-word; }
     th { background: #f5f5f5; position: sticky; top: 0; }
+    td code { word-break: break-all; font-size: 0.85em; }
     .answer pre { white-space: pre-wrap; word-break: break-word; margin-top: 8px; background: #fafafa; padding: 8px; border-radius: 6px; }
     .answer pre.error { background: #fff1f0; color: #a8071a; }
     .thumb { max-width: 220px; border: 1px solid #ddd; border-radius: 8px; cursor: zoom-in; }
@@ -132,8 +141,9 @@ function buildHtmlReport(summary: RunSummary): string {
   <h1>SBB Chat Test Report</h1>
   <div class="meta">
     <div><strong>Run ID:</strong> ${escapeHtml(summary.runId)}</div>
-    <div><strong>Started:</strong> ${escapeHtml(summary.startedAt)}</div>
-    <div><strong>Finished:</strong> ${escapeHtml(summary.finishedAt || 'in progress')}</div>
+    <div><strong>Started:</strong> ${escapeHtml(formatLocalDateTime(summary.startedAt))}</div>
+    <div><strong>Finished:</strong> ${escapeHtml(summary.finishedAt ? formatLocalDateTime(summary.finishedAt) : 'in progress')}</div>
+    <div><strong>Run duration:</strong> ${escapeHtml(runDurationMs !== undefined ? formatDuration(runDurationMs) : 'in progress')}</div>
     <div><strong>Base URL:</strong> ${escapeHtml(summary.baseUrl)}</div>
     <div><strong>Playwright:</strong> ${escapeHtml(summary.playwrightVersion)}</div>
     <div><strong>Results:</strong> ${passed} passed, ${failed} failed, ${summary.results.length} total</div>
@@ -148,13 +158,15 @@ function buildHtmlReport(summary: RunSummary): string {
   <table>
     <thead>
       <tr>
-        <th style="width: 12%">Kategorie</th>
-        <th style="width: 12%">Intention</th>
-        <th style="width: 7%">Type</th>
-        <th style="width: 18%">Prompt</th>
-        <th style="width: 35%">Antwort</th>
-        <th style="width: 8%">Duration</th>
-        <th style="width: 8%">Status</th>
+        <th style="width: 10%">Kategorie</th>
+        <th style="width: 10%">Intention</th>
+        <th style="width: 6%">Type</th>
+        <th style="width: 16%">Prompt</th>
+        <th style="width: 6%">Dauer</th>
+        <th style="width: 14%">Session ID</th>
+        <th style="width: 24%">Antwort</th>
+        <th style="width: 8%">Ausgeführt</th>
+        <th style="width: 6%">Status</th>
       </tr>
     </thead>
     <tbody>

@@ -84,59 +84,85 @@ export class SbbChatPage {
     }
   }
 
+  private async waitForWidgetsLoaded(botBlock: Locator): Promise<void> {
+    await expect
+      .poll(async () => botBlock.innerText(), {
+        timeout: 15_000,
+        message: 'Waiting for bot response text to render',
+      })
+      .not.toBe('');
+
+    let previousHeight = 0;
+    let stableChecks = 0;
+
+    while (stableChecks < 3) {
+      const box = await botBlock.boundingBox();
+      const height = box?.height ?? 0;
+
+      if (height > 0 && height === previousHeight) {
+        stableChecks += 1;
+      } else {
+        stableChecks = 0;
+        previousHeight = height;
+      }
+
+      await this.page.waitForTimeout(500);
+    }
+  }
+
   async screenshotFullPage(path: string): Promise<void> {
-    await expect(this.chatArea).toBeVisible({ timeout: 10_000 });
+    const lastBot = this.botResponses.last();
 
-    const totalHeight = await this.chatArea.evaluate((main) => {
-      main.dataset.sbbOriginalHeight = main.style.height;
-      main.dataset.sbbOriginalMaxHeight = main.style.maxHeight;
-      main.dataset.sbbOriginalOverflow = main.style.overflow;
-      main.style.height = `${main.scrollHeight}px`;
-      main.style.maxHeight = 'none';
-      main.style.overflow = 'visible';
+    await expect(lastBot).toBeVisible({ timeout: 10_000 });
+    await this.waitForWidgetsLoaded(lastBot);
 
-      const layout = main.closest('.layout') as HTMLElement | null;
-      const layoutTop = layout?.getBoundingClientRect().top ?? 0;
-      const layoutScrollHeight = layout?.scrollHeight ?? main.scrollHeight;
-      return Math.ceil(layoutTop + layoutScrollHeight);
-    });
+    const originalViewport = this.page.viewportSize() ?? { width: 390, height: 844 };
 
-    await this.page.evaluate(({ height }) => {
-      const docEl = document.documentElement;
-      const body = document.body;
-      docEl.dataset.sbbOriginalHeight = docEl.style.height;
-      body.dataset.sbbOriginalHeight = body.style.height;
-      body.dataset.sbbOriginalOverflow = body.style.overflow;
-      docEl.style.height = `${height}px`;
-      body.style.height = `${height}px`;
-      body.style.overflow = 'visible';
+    try {
+      // The chat pane is a fixed-height scroll container: content below the fold
+      // is not painted, so clipping beyond it captures blank space. Grow the
+      // viewport so the entire conversation renders at once, then clip the
+      // question-to-answer region exactly.
+      const requiredHeight = await this.chatArea.evaluate((main) => main.scrollHeight);
+      await this.page.setViewportSize({
+        width: originalViewport.width,
+        height: requiredHeight + 300,
+      });
+      await this.page.waitForTimeout(1_000);
 
-      const harness = document.querySelector('app-sbb-chat-harness') as HTMLElement | null;
-      if (harness) {
-        harness.dataset.sbbOriginalHeight = harness.style.height;
-        harness.style.height = 'auto';
+      const clip = await this.chatArea.evaluate((main) => {
+        const users = main.querySelectorAll('app-user-content-block');
+        const bots = main.querySelectorAll('app-bot-content-block');
+        const lastUserEl = users[users.length - 1] as HTMLElement | undefined;
+        const lastBotEl = bots[bots.length - 1] as HTMLElement | undefined;
+
+        if (!lastUserEl || !lastBotEl) {
+          return null;
+        }
+
+        const userRect = lastUserEl.getBoundingClientRect();
+        const botRect = lastBotEl.getBoundingClientRect();
+        const clipY = Math.max(0, userRect.top - 12);
+
+        return {
+          x: 0,
+          y: clipY,
+          width: Math.ceil(userRect.width > 0 ? (main as HTMLElement).offsetWidth : 390),
+          height: Math.ceil(botRect.bottom + 12 - clipY),
+        };
+      });
+
+      if (!clip || clip.height <= 0) {
+        throw new Error('Could not determine screenshot region for question and answer');
       }
-    }, { height: totalHeight });
 
-    await this.page.screenshot({ path, fullPage: true });
-
-    await this.page.evaluate(() => {
-      const docEl = document.documentElement;
-      const body = document.body;
-      docEl.style.height = docEl.dataset.sbbOriginalHeight ?? '';
-      body.style.height = body.dataset.sbbOriginalHeight ?? '';
-      body.style.overflow = body.dataset.sbbOriginalOverflow ?? '';
-
-      const harness = document.querySelector('app-sbb-chat-harness') as HTMLElement | null;
-      if (harness) {
-        harness.style.height = harness.dataset.sbbOriginalHeight ?? '';
-      }
-    });
-
-    await this.chatArea.evaluate((main) => {
-      main.style.height = main.dataset.sbbOriginalHeight ?? '';
-      main.style.maxHeight = main.dataset.sbbOriginalMaxHeight ?? '';
-      main.style.overflow = main.dataset.sbbOriginalOverflow ?? '';
-    });
+      await this.page.screenshot({
+        path,
+        clip: { ...clip, width: originalViewport.width },
+      });
+    } finally {
+      await this.page.setViewportSize(originalViewport);
+      await this.page.waitForTimeout(300);
+    }
   }
 }

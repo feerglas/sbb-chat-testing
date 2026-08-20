@@ -2,7 +2,9 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { version as playwrightVersion } from '@playwright/test/package.json';
 import type { Page } from '@playwright/test';
+import { getLocalRunId } from './datetime';
 import { SbbChatPage } from './sbb-chat.page';
+import { ChatSessionCapture } from './session';
 import type { RunSummary, TestCase, TestResult, TestSuite } from './types';
 
 const RESULTS_DIR = path.join(process.cwd(), 'results');
@@ -13,7 +15,7 @@ export function getRunId(): string {
     return envRunId;
   }
 
-  return new Date().toISOString().replace(/[:.]/g, '-');
+  return getLocalRunId();
 }
 
 export function getRunDir(runId = getRunId()): string {
@@ -83,9 +85,10 @@ export async function runChatTestCase(
   const metaPath = path.join(testDir, 'meta.json');
   const startedAt = Date.now();
   const chat = new SbbChatPage(page);
+  const sessionCapture = new ChatSessionCapture(page);
   const baseUrl = process.env.SBB_CHAT_URL ?? suite.meta.baseUrl;
 
-  const baseResult: Omit<TestResult, 'status' | 'responseText' | 'durationMs' | 'timestamp'> = {
+  const baseResult: Omit<TestResult, 'status' | 'responseText' | 'durationMs' | 'timestamp' | 'chatSessionId'> = {
     id: testCase.id,
     category: testCase.category,
     intention: testCase.intention,
@@ -108,6 +111,7 @@ export async function runChatTestCase(
       previousCount,
       suite.meta.responseTimeoutMs,
     );
+    const chatSessionId = await sessionCapture.getChatSessionId();
 
     await fs.mkdir(testDir, { recursive: true });
     await chat.screenshotFullPage(screenshotPath);
@@ -117,6 +121,7 @@ export async function runChatTestCase(
       ...baseResult,
       status: 'passed',
       responseText,
+      chatSessionId,
       durationMs: Date.now() - startedAt,
       timestamp: new Date().toISOString(),
     };
@@ -133,10 +138,13 @@ export async function runChatTestCase(
       await chat.screenshotFullPage(screenshotPath).catch(() => undefined);
     }
 
+    const chatSessionId = await sessionCapture.getChatSessionId().catch(() => undefined);
+
     const result: TestResult = {
       ...baseResult,
       status: 'failed',
       responseText: '',
+      chatSessionId,
       durationMs: Date.now() - startedAt,
       timestamp: new Date().toISOString(),
       error: message,

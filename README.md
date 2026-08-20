@@ -47,6 +47,11 @@ After a run, artifacts are written to `results/<run-id>/`:
 | `report.html` | Interactive local report with filters |
 | `<test-id>/screenshot.png` | Full-page screenshot per case |
 | `<test-id>/response.txt` | Extracted bot response text |
+| `<test-id>/meta.json` | Per-case metadata including `chatSessionId` and `durationMs` |
+
+Run folders use **local time**, e.g. `results/2026-08-20T13-37-45-123/`.
+
+Reports include **Dauer** (per test), **Session ID** (`chat_session` cookie from the messages request), and run-level duration in the header.
 
 Regenerate reports without re-running tests:
 

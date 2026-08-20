@@ -33,6 +33,7 @@ export interface TestResult {
   responseText: string;
   screenshotPath: string;
   durationMs: number;
+  chatSessionId?: string;
   error?: string;
   timestamp: string;
 }
