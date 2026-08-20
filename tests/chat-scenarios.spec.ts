@@ -27,7 +27,11 @@ test.beforeAll(async () => {
 
 test.afterAll(async () => {
   await finalizeRunSummary();
-  execFileSync('npm', ['run', 'report'], { stdio: 'inherit' });
+  execFileSync('npm', ['run', 'report'], {
+    stdio: 'inherit',
+    // Windows resolves npm via npm.cmd, which requires a shell.
+    shell: process.platform === 'win32',
+  });
 });
 
 for (const testCase of enabledTestCases) {

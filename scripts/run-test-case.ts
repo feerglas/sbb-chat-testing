@@ -56,4 +56,6 @@ if (runId) {
 execFileSync('npx', ['playwright', 'test'], {
   env,
   stdio: 'inherit',
+  // Windows resolves npx via npx.cmd, which requires a shell.
+  shell: process.platform === 'win32',
 });

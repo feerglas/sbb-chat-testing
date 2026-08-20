@@ -4,6 +4,8 @@ Automates manual SBB chatbot regression testing: send prompts from JSON, wait fo
 
 Target environment: [https://conversational-ui-dev.app.sbb.ch/de/sbb-chat/](https://conversational-ui-dev.app.sbb.ch/de/sbb-chat/)
 
+> **New here / non-developer?** See the step-by-step beginner guide for Windows: [GETTING_STARTED.md](GETTING_STARTED.md)
+
 ## Setup
 
 ```bash
