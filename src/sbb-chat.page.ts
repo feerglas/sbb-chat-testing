@@ -17,9 +17,22 @@ export class SbbChatPage {
 
   async goto(url: string): Promise<void> {
     await this.page.goto(url, { waitUntil: 'load' });
+    await this.dismissCookieConsent();
     await expect(this.page.locator('app-sbb-chat-harness')).toBeVisible({ timeout: 30_000 });
   }
 
+  private async dismissCookieConsent(): Promise<void> {
+    const acceptButton = this.page.locator('#onetrust-accept-btn-handler');
+
+    await acceptButton
+      .waitFor({ state: 'visible', timeout: 10_000 })
+      .then(() => acceptButton.click())
+      .catch(() => undefined);
+
+    await expect(this.page.locator('#onetrust-consent-sdk')).toBeHidden({
+      timeout: 5_000,
+    });
+  }
   async ensureActiveSession(): Promise<void> {
     if (await this.startChatButton.isVisible({ timeout: 3_000 }).catch(() => false)) {
       await this.startChatButton.click();
